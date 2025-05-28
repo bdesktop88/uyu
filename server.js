@@ -4,7 +4,6 @@ const sqlite3 = require('sqlite3').verbose();
 const { v4: uuidv4 } = require('uuid');
 const bodyParser = require('body-parser');
 const rateLimit = require('express-rate-limit');
-const atob = require('atob');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -42,7 +41,7 @@ app.post('/add-redirect', (req, res) => {
   const { destination } = req.body;
   if (!destination) return res.status(400).json({ message: 'Missing destination URL' });
   const token = uuidv4().slice(0, 8);
-  const encoded = Buffer.from(destination).toString('base64');
+  const encoded = Buffer.from(destination, 'utf-8').toString('base64');
   db.run(`INSERT INTO redirects (token, destination) VALUES (?, ?)`, [token, encoded], (err) => {
     if (err) return res.status(500).json({ message: 'Failed to save redirect' });
     res.json({ redirectUrl: `${req.protocol}://${req.get('host')}/r/${token}` });
@@ -51,11 +50,9 @@ app.post('/add-redirect', (req, res) => {
 
 app.get('/r/:token', (req, res) => {
   const token = req.params.token;
-
   db.get('SELECT value FROM settings WHERE key = ?', ['recaptcha_site_key'], (err, row) => {
     if (err || !row) return res.status(500).send('Missing reCAPTCHA site key');
     const siteKey = row.value;
-
     const html = `
       <!DOCTYPE html>
       <html lang="en">
@@ -89,7 +86,7 @@ app.get('/r/:token', (req, res) => {
             background: #e0e0e0;
             border-radius: 2px;
             overflow: hidden;
-            width: 100%;
+            width: 1005%;
             box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
           }
           .progress-bar::before {
@@ -115,7 +112,7 @@ app.get('/r/:token', (req, res) => {
         <script>
           grecaptcha.ready(async function () {
             const recaptchaToken = await grecaptcha.execute('${siteKey}', { action: 'redirect' });
-            const token = decodeURIComponent(window.location.pathname.split('/').pop());
+            const token = window.location.pathname.split('/').pop();
             const response = await fetch('/verify-redirect', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -123,8 +120,7 @@ app.get('/r/:token', (req, res) => {
             });
             const result = await response.json();
             if (result.destination) {
-              const decoded = atob(result.destination);
-              window.location.href = decoded;
+              window.location.href = result.destination;
             } else {
               document.body.innerHTML = '<p style="color:red; text-align:center; margin-top:20px;">Access denied: ' + result.message + '</p>';
             }
@@ -133,7 +129,6 @@ app.get('/r/:token', (req, res) => {
       </body>
       </html>
     `;
-
     res.send(html);
   });
 });
@@ -141,10 +136,8 @@ app.get('/r/:token', (req, res) => {
 app.post('/verify-redirect', async (req, res) => {
   const { token, recaptchaToken } = req.body;
   if (!token || !recaptchaToken) return res.status(400).json({ message: 'Missing parameters' });
-
   db.get('SELECT value FROM settings WHERE key = ?', ['recaptcha_secret_key'], async (err, row) => {
     if (err || !row) return res.status(500).json({ message: 'reCAPTCHA key error' });
-
     try {
       const recaptchaSecret = row.value;
       const verify = await fetch('https://www.google.com/recaptcha/api/siteverify', {
@@ -154,10 +147,10 @@ app.post('/verify-redirect', async (req, res) => {
       });
       const data = await verify.json();
       if (!data.success || data.score < 0.5) return res.status(403).json({ message: 'reCAPTCHA failed' });
-
       db.get(`SELECT destination FROM redirects WHERE token = ?`, [token], (err, row) => {
         if (err || !row) return res.status(404).json({ message: 'Redirect token not found' });
-        res.json({ destination: row.destination });
+        const decoded = Buffer.from(row.destination, 'base64').toString('utf-8');
+        res.json({ destination: decoded });
       });
     } catch (e) {
       console.error(e);
@@ -166,7 +159,6 @@ app.post('/verify-redirect', async (req, res) => {
   });
 });
 
-// Remaining admin endpoints (unchanged)
 app.post('/admin/login', (req, res) => {
   const { password } = req.body;
   db.get('SELECT value FROM settings WHERE key = ?', ['admin_password'], (err, row) => {
@@ -187,7 +179,6 @@ app.get('/admin/settings', (req, res) => {
 app.post('/admin/settings', (req, res) => {
   const settings = req.body;
   const updates = Object.entries(settings);
-
   db.serialize(() => {
     const stmt = db.prepare('REPLACE INTO settings (key, value) VALUES (?, ?)');
     updates.forEach(([key, value]) => {
@@ -195,7 +186,6 @@ app.post('/admin/settings', (req, res) => {
     });
     stmt.finalize();
   });
-
   res.json({ success: true });
 });
 
@@ -209,7 +199,7 @@ app.get('/admin/redirects', (req, res) => {
 app.post('/admin/update-redirect', (req, res) => {
   const { token, destination } = req.body;
   if (!token || !destination) return res.status(400).json({ success: false });
-  const encoded = Buffer.from(destination).toString('base64');
+  const encoded = Buffer.from(destination, 'utf-8').toString('base64');
   db.run(`UPDATE redirects SET destination = ? WHERE token = ?`, [encoded, token], function (err) {
     if (err || this.changes === 0) return res.status(500).json({ success: false });
     res.json({ success: true });
