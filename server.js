@@ -4,10 +4,10 @@ const sqlite3 = require('sqlite3').verbose();
 const { v4: uuidv4 } = require('uuid');
 const bodyParser = require('body-parser');
 const rateLimit = require('express-rate-limit');
-const app = express();
-app.set('trust proxy', 1);
 
-const app = express();
+const app = express();        // ✅ Declare app
+app.set('trust proxy', 1);    // ✅ Set trust proxy here
+
 const PORT = 3000;
 
 const db = new sqlite3.Database('./redirects.db', (err) => {
