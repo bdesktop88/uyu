@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Redirect Link Generator</title>
+</head>
+<body>
+    <h2>Generate Redirect Link</h2>
+    <form id="redirectForm">
+        <label for="destination">Destination URL:</label>
+        <input type="url" id="destination" name="destination" required>
+        <button type="submit">Generate Redirect</button>
+    </form>
+    <p id="output"></p>
+
+    <script>
+        document.getElementById('redirectForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const destination = document.getElementById('destination').value;
+
+            // Send a POST request to the server to create a new redirect
+            const response = await fetch('/add-redirect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ destination })
+            });
+
+            // Display the generated link or an error message
+            const result = await response.json();
+            document.getElementById('output').innerText = result.redirectUrl || result.message;
+        });
+    </script>
+</body>
+</html>
